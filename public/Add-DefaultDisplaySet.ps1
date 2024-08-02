@@ -26,6 +26,7 @@ function Add-DefaultDisplaySet {
           foreach ($Key in $PropertyToAdd.Keys) {
             switch ($PropertyToAdd[$Key].GetType().Name) {
               'ScriptBlock' {
+                #Set value to the value of the script block against the object
                 $Object.PSObject.Properties.Add(([Management.Automation.PSScriptProperty]::new($Key, $PropertyToAdd[$Key])))
                 break
               }

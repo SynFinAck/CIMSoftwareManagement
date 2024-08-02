@@ -1,40 +1,62 @@
+using namespace System.Collections.Generic
+using namespace System.Management.Automation
+using namespace Microsoft.Win32
 function Remove-SoftwareItem {
   [CmdletBinding(
-    DefaultParameterSetName = 'InputObject',
+    ConfirmImpact = 'High',
     SupportsShouldProcess = $true)]
   param (
     [Parameter(
       Mandatory = $false,
       ValueFromPipeline = $true,
       Position = 0,
-      ParameterSetName = 'InputObject'
+      ParameterSetName = 'fromPipeline'
     )]
     [SoftwareItem[]]$InputObject,
-    [Parameter(Mandatory = $false)]
+
+    [Parameter(Mandatory = $false,
+      ParameterSetName = 'NewSession')]
     [Alias('ComputerName')]
     [string[]]$CN = $ENV:COMPUTERNAME,
+    [Parameter(Mandatory = $false,
+      ParameterSetName = 'NewSession')]
+    [CredentialAttribute()]
+    [PSCredential]$Credential,
+    [Parameter(Mandatory = $false,
+      ParameterSetName = 'UseSession')]
+    [cimsession[]]$CimSession,
+    [uint]$OperationTimeoutSec = 60,
 
     [Parameter(
       Mandatory = $false,
       ParameterSetName = 'Filter'
     )]
-    [uint]$OperationTimeoutSec,
-
-    [Parameter(
-      Mandatory = $false,
-      ParameterSetName = 'Filter')]
     [Alias('Filter')]
     [scriptblock]$FilterScript,
-
-    [switch]$Force,
-    [switch]$Confirm
+    [switch]$NoRestart,
+    [switch]$CloseSession,
+    [switch]$Force
   )
+
   begin {
     function Invoke-UninstallCommand {
+      [CmdletBinding(
+        ConfirmImpact = 'High',
+        SupportsShouldProcess = $true)]
       param (
-        [Parameter(Mandatory = $true)]
+        [Parameter(
+          Mandatory = $false,
+          ParameterSetName = 'NewSession')]
         [string]$ComputerName,
-        [Parameter(Mandatory = $true)]
+        [Parameter(
+          Mandatory = $false,
+          ParameterSetName = 'NewSession')]
+        [PSCredential]$Credential,
+        [Parameter(
+          Mandatory = $false,
+          ParameterSetName = 'ByCimSession')]
+        [CimSession[]]$CimSession,
+        [Parameter(Mandatory = $false)]
         [string]$DisplayName,
         [Parameter(Mandatory = $true)]
         [string]$UninstallString,
@@ -42,35 +64,81 @@ function Remove-SoftwareItem {
         [switch]$NoRestart,
         [switch]$Force
       )
-
-      $uninstallScript = "Start-Process -FilePath 'msiexec' `
-                          -ArgumentList '/x', '$UninstallString', '/quiet', '/norestart' `
-                          -Wait `
-                          -NoNewWindow `
-                          -ErrorAction Stop"
-      Invoke-Command -ComputerName $ComputerName -ScriptBlock ([scriptblock]::Create($uninstallScript))
+      switch ( $PSCmdlet.ParameterSetName ) {
+        'ByComputerName' {
+          $CimSession = @(New-CimSession -ComputerName $ComputerName -Credential $Credential)
+          $computerName = $CimSession.ComputerName
+        }
+        'ByCimSession' {
+          foreach ($session in $CimSession) {
+            $ComputerName = $session.ComputerName
+            if ($PSCmdlet.ShouldProcess($ComputerName, ('Uninstall software item: {0}' -f $session.DisplayName))) {
+              $scriptBlock = [ScriptBlock]::Create(([string]::format('Start-Process -FilePath "msiexec" -ArgumentList "/x", "{0}", $(if($Quiet){"/quiet"}), $(if($NoRestart){"/norestart"}), $(if($Force){"/forcerestart"}) -Wait', $session.UninstallString)))
+              try {
+                Invoke-Command -CimSession $session -ScriptBlock $scriptBlock
+              }
+              catch {
+                Write-Error -Message ("Failed to invoke uninstall command for {0} on {1}: {2}" -f $session.DisplayName, $session.ComputerName, $_)
+              }
+            }
+          }
+        }
+        default {
+          throw 'Invalid parameter set name'
+        }
+      }
     }
   }
   process {
-    if (-NOT $InputObject) {
-      $CimSession = [CimSession]::Create($CN)
-      $InputObject = Get-SoftwareItem -CimSession $CimSession
-    }
-    foreach ($item in $InputObject) {
-      try {
-        if (-NOT $item.NoRemove -or $Force.IsPresent) {
-          if ($Confirm.IsPresent -and -NOT $Force.IsPresent) {
-            $shouldProcess = $PSCmdlet.ShouldProcess($item.DisplayName, "Removing Software")
-            if (-NOT $shouldProcess) {
-              Write-Warning -Message ("Skipping removal of {0} as it was not confirmed for removal." -f $item.DisplayName)
-              continue
+    switch ($PSCmdlet.ParameterSetName) {
+      'fromPipeline' {
+        foreach ($obj in $InputObject) {
+          if (-NOT $Confirm -or $Force) {
+            $message = if ($inputobject.count -eq 1) {
+              'Uninstall ' + $obj.DisplayName
+            }
+            elseif ($InputObject.count -gt 3) {
+              "{0} and {1} number more items" -f ($obj.Displayname, $InputObject.Count)
+            }
+            if ($PSCmdlet.ShouldProcess(
+                $obj.ComputerName, $message)) {
+              try {
+                Invoke-UninstallCommand -UninstallString $obj.uninstallString -Quiet:$Quiet -NoRestart:$NoRestart -Force:$Force
+              }
+              catch {
+                Write-Error -Message ("Failed to uninstall software item: {0}" -f $obj.DisplayName)
+              }
+            }
+            else {
+              Write-Warning -Message "{0} removal cancelled by the user." -f $obj.DisplayName
             }
           }
-          Invoke-UninstallCommand -ComputerName $CN -DisplayName $item.DisplayName -UninstallString $item.UninstallString -Force:$Force
         }
       }
-      catch {
-        Write-Error -Message ('Failed to remove {0}: {1}' -f $item.DisplayName, $_)
+      'NewSession' {
+        foreach ($computer in $CN) {
+          $CimSession = New-CimSession -ComputerName $computer -Credential $Credential -OperationTimeoutSec $OperationTimeoutSec
+          $softwareItems = Get-SoftwareItem -CimSession $CimSession
+          foreach ($softwareItem in $softwareItems) {
+            if ($softwareItem.DisplayName -eq $softwareDisplayName) {
+              if ($PSCmdlet.ShouldProcess($computer, ('Uninstall software item: {0}' -f $softwareDisplayName))) {
+                Invoke-UninstallCommand -ComputerName $computer -Credential $Credential -DisplayName $softwareDisplayName -UninstallString $softwareItem.UninstallString -NoRestart:$NoRestart -Force:$Force
+              }
+            }
+          }
+        }
+      }
+      'UseSession' {
+        foreach ($session in $CimSession) {
+          $softwareItems = Get-SoftwareItem -CimSession $session
+          foreach ($softwareItem in $softwareItems) {
+            if ($softwareItem.UninstallString -eq $softwareDisplayName) {
+              if ($PSCmdlet.ShouldProcess($session.ComputerName, ('Uninstall software item: {0}' -f $softwareDisplayName))) {
+                Invoke-UninstallCommand -CimSession $session -DisplayName $softwareDisplayName -UninstallString $softwareItem.UninstallString -NoRestart:$NoRestart -Force:$Force
+              }
+            }
+          }
+        }
       }
     }
   }
