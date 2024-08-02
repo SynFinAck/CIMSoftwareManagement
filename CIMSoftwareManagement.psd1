@@ -60,7 +60,7 @@
   # ScriptsToProcess = @()
 
   # Type files (.ps1xml) to be loaded when importing this module
-  TypesToProcess    = 'SoftwareItem'
+  #TypesToProcess    = 'SoftwareItem'
 
   # Format files (.ps1xml) to be loaded when importing this module
   # FormatsToProcess = @()
@@ -101,7 +101,7 @@
       # LicenseUri = ''
 
       # A URL to the main website for this project.
-      # ProjectUri = ''
+      ProjectUri = 'https://github.com/SynFinAck/CIMSoftwareManagement'
 
       # A URL to an icon representing this module.
       # IconUri = ''

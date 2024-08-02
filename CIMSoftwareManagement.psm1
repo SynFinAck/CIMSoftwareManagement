@@ -9,24 +9,24 @@ using namespace Microsoft.Win32
 
 # The SoftwareItem class represents a software item installed on a computer.
 # It has properties for the name, version, and install date of the software item.
-class SoftwareItem {
-  [string]$ComputerName
-  [string]$DisplayName
-  [string]$DisplayVersion
-  [string]$Publisher
-  [string]$InstallDate
-  [string]$InstallLocation
-  [string]$Architecture
-  [string]$UninstallString
-  [string]$QuietUninstallString
-  [string]$EstimatedSize
-  [int]$EstimatedSizeBytes
-  [bool]$NoRemove
-  [bool]$NoRepair
-  [bool]$NoModify
-  [string]$DisplayIcon
-  [string]$UrlInfoAbout
-}
+# class SoftwareItem {
+#   [string]$ComputerName
+#   [string]$DisplayName
+#   [string]$DisplayVersion
+#   [string]$Publisher
+#   [string]$InstallDate
+#   [string]$InstallLocation
+#   [string]$Architecture
+#   [string]$UninstallString
+#   [string]$QuietUninstallString
+#   [string]$EstimatedSize
+#   [int]$EstimatedSizeBytes
+#   [bool]$NoRemove
+#   [bool]$NoRepair
+#   [bool]$NoModify
+#   [string]$DisplayIcon
+#   [string]$UrlInfoAbout
+# }
 
 # Load functions from other files
 foreach ($file in (Get-ChildItem -Path $PSScriptRoot\public -Filter '*.ps1' -File -Exclude '*.Tests.ps1' -Recurse)) {
